@@ -1,0 +1,112 @@
+name: Release
+
+# Push a tag like v0.1.0 to publish: PyPI package, GitHub Release, standalone binaries.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  dist:
+    name: Build sdist and wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Tag must match the package version
+        run: |
+          VERSION=$(python -c "import re,pathlib; print(re.search(r'__version__ = \"(.+?)\"', pathlib.Path('src/mail_sender_audit/__init__.py').read_text()).group(1))")
+          if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match version $VERSION in __init__.py" >&2
+            exit 1
+          fi
+      - run: pip install build
+      - run: python -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  binaries:
+    name: Binary (${{ matrix.asset }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            built: mail-sender-audit
+            asset: mail-sender-audit-linux-x86_64
+          - os: macos-latest # Apple Silicon
+            built: mail-sender-audit
+            asset: mail-sender-audit-macos-arm64
+          - os: windows-latest
+            built: mail-sender-audit.exe
+            asset: mail-sender-audit-windows-x86_64.exe
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install . pyinstaller
+      - name: Build executable
+        shell: bash
+        run: |
+          pyinstaller --onefile --name mail-sender-audit \
+            --collect-data googleapiclient \
+            --collect-submodules googleapiclient \
+            --collect-data certifi \
+            --copy-metadata keyring \
+            --collect-submodules keyring.backends \
+            packaging/pyinstaller_entry.py
+      - name: Smoke test
+        shell: bash
+        run: |
+          ./dist/${{ matrix.built }} --version
+          ./dist/${{ matrix.built }} --help
+      - name: Name the asset
+        shell: bash
+        run: mv dist/${{ matrix.built }} dist/${{ matrix.asset }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+
+  github-release:
+    name: GitHub Release
+    needs: [dist, binaries]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Checksums
+        run: |
+          cd artifacts
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: dist
+    runs-on: ubuntu-latest
+    environment: pypi # create this environment in the repo settings
+    permissions:
+      id-token: write # trusted publishing: no API token stored in GitHub
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
