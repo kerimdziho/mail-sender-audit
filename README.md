@@ -1,7 +1,6 @@
 # mail-sender-audit
 
 [![CI](https://github.com/kerimdziho/mail-sender-audit/actions/workflows/ci.yml/badge.svg)](https://github.com/kerimdziho/mail-sender-audit/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/mail-sender-audit)](https://pypi.org/project/mail-sender-audit/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **Clean up your inbox from the terminal.** `mail-sender-audit` scans your inbox, groups mailing lists
